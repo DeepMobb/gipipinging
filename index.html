@@ -237,6 +237,23 @@
                 }
                 
                 switch(data.status) {
+                    case 'waiting':
+                        if (auth.currentUser.uid === data.receiverId) {
+                            currentState.localUsername = data.receiverUsername;
+                            const qrElement = document.getElementById('qrcode');
+                            qrElement.innerHTML = '';
+                            const qrData = JSON.stringify({
+                                connectionId: connectionId,
+                                username: data.receiverUsername,
+                                userId: data.receiverId
+                            });
+                            new QRCode(qrElement, { text: qrData, width: 256, height: 256 });
+                            const statusText = document.getElementById('qr-status-text');
+                            statusText.textContent = "Listening for connection...";
+                            statusText.classList.add('animate-pulse-subtle');
+                            changeScreen('qr-generator-screen');
+                        }
+                        break;
                     case 'awaiting-reply':
                         if (auth.currentUser.uid === data.receiverId) {
                             document.getElementById('ping-request-user-text').textContent = `${data.initiatorUsername} wants to connect.`;
@@ -441,4 +458,5 @@
     </script>
 </body>
 </html>
+
 
