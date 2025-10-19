@@ -20,7 +20,7 @@
         @keyframes fadeInScreen { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         .animate-fade-out { animation: fadeOutScreen 0.5s ease-in-out forwards; }
         .animate-fade-in { animation: fadeInScreen 0.5s ease-in-out forwards; }
-        #qr-scanner video, #face-scan-video { width: 100% !important; height: auto !important; border-radius: 1.5rem; transform: scaleX(-1); }
+        #qr-scanner video, #face-scan-video { width: 100% !important; height: auto !important; border-radius: 1.5rem; }
         .chat-bubble { max-width: 75%; }
         .chat-bubble-user { background-color: #0052A2; color: white; align-self: flex-end; }
         .chat-bubble-peer { background-color: #333; color: white; align-self: flex-start; }
@@ -71,6 +71,7 @@
             currentScreen: 'loading-screen',
             connectionId: null,
             peerUsername: null,
+            peerId: null,
             localUsername: null,
             userId: null,
             isAuthReady: false,
@@ -79,9 +80,6 @@
 
         // --- INITIALIZATION ---
         window.onload = function() {
-            // ACTION REQUIRED: Paste your Firebase configuration object here.
-            // You can get this from your Firebase project settings.
-            // Go to Project Settings > General > Your apps > Web app > Firebase SDK snippet > Config
             const firebaseConfig = {
                 apiKey: "AIzaSyDS6IGHzcctU7ilJs4n0T2CLGy4_zGn0Go",
                 authDomain: "gipi-71915.firebaseapp.com",
@@ -93,7 +91,6 @@
 
             const finalConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig;
 
-            // Check if the placeholder config is still being used when running locally.
             if (finalConfig.apiKey.startsWith("PASTE_YOUR")) {
                 console.error("Firebase configuration is missing or incomplete.");
                 alert("ACTION REQUIRED: You need to paste your Firebase project configuration into the index.html file to connect the app. Please see the comments in the <script> tag.");
@@ -105,7 +102,7 @@
             db = getFirestore(app);
             auth = getAuth(app);
 
-            loadState(); // Load local state first
+            loadState();
             
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
@@ -134,7 +131,6 @@
             checkInactivity();
             
             if (currentState.connectionId) {
-                // If we have a connectionId, listen to it
                 listenToConnection(currentState.connectionId);
             } else if (currentState.currentScreen === 'loading-screen') {
                  setTimeout(() => {
@@ -142,7 +138,6 @@
                     changeScreen('main-screen');
                 }, 3000);
             } else {
-                // Restore previous non-connected screen
                 document.getElementById('loading-screen').classList.add('hidden');
                 document.getElementById(currentState.currentScreen).classList.remove('hidden');
                 if(currentState.currentScreen === 'main-screen') renderMainScreen('buttons');
@@ -206,11 +201,11 @@
                     html5QrCode.stop();
                     currentState.connectionId = data.connectionId;
                     currentState.peerUsername = data.username;
+                    currentState.peerId = data.userId;
                     currentState.localUsername = currentState.localUsername || generateRandomUsername();
                     
                     listenToConnection(data.connectionId);
                     
-                    // Proceed to send facial proof
                     changeScreen('connected-screen');
                     setupConnectedScreenDOM();
                     initiatePing();
@@ -226,21 +221,18 @@
 
             unsubscribeConnection = onSnapshot(docRef, (docSnap) => {
                 if (!docSnap.exists()) {
-                    // Document was deleted (connection shattered)
                     if (currentState.connectionId) goHome();
                     return;
                 }
 
                 const data = docSnap.data();
                 
-                // Update peer username if we are the receiver
                 if (data.initiatorUsername && auth.currentUser.uid === data.receiverId) {
                     currentState.peerUsername = data.initiatorUsername;
                 }
                 
                 switch(data.status) {
                     case 'awaiting-reply':
-                        // This is for the receiver
                         if (auth.currentUser.uid === data.receiverId) {
                             document.getElementById('ping-request-user-text').textContent = `${data.initiatorUsername} wants to connect.`;
                             document.getElementById('ping-request-image').src = data.initiatorFaceProof;
@@ -249,7 +241,7 @@
                         break;
                     
                     case 'connected':
-                        if (unsubscribeMessages) unsubscribeMessages(); // Stop previous message listener if any
+                        if (unsubscribeMessages) unsubscribeMessages();
                         listenToMessages(connectionId);
                         changeScreen('chat-room-screen');
                         setupChatRoomDOM();
@@ -292,12 +284,11 @@
             const docSnap = await getDoc(docRef);
 
             if (!docSnap.exists()) {
-                // We are the initiator, creating the request
                 await setDoc(docRef, {
                     initiatorId: auth.currentUser.uid,
                     initiatorUsername: currentState.localUsername,
                     initiatorFaceProof: faceProofUrl,
-                    receiverId: null, // This will be set by the QR data, but we don't know it yet. A Cloud Function could fix this.
+                    receiverId: currentState.peerId,
                     receiverUsername: currentState.peerUsername,
                     status: 'awaiting-reply',
                     createdAt: serverTimestamp()
@@ -306,12 +297,10 @@
                 setupConnectedScreenDOM();
                 showAwaitingStatus();
             } else {
-                // We are the receiver, accepting the request
                 await updateDoc(docRef, {
                     receiverFaceProof: faceProofUrl,
                     status: 'connected'
                 });
-                // The onSnapshot listener will handle screen change
             }
             faceScanButton.disabled = false;
             faceScanButton.textContent = "Scan Face & Send";
@@ -332,7 +321,6 @@
             hideModal();
             const docRef = doc(db, "artifacts", currentState.appId, "public/data/pings", currentState.connectionId);
             await updateDoc(docRef, { status: 'declined' });
-            // The initiator's listener will alert them. We can go home.
             goHome();
         }
 
@@ -354,7 +342,7 @@
         async function shatterConnection() {
             if (!currentState.connectionId) return;
             const connectionIdToDelete = currentState.connectionId;
-            goHome(); // Go home immediately for snappy UX
+            goHome(); 
             
             try {
                 const docRef = doc(db, "artifacts", currentState.appId, "public/data/pings", connectionIdToDelete);
@@ -393,15 +381,12 @@
         }
         
         // --- ALL OTHER FUNCTIONS (UTILITIES, CAMERA, STATE) ---
-        // These functions are largely unchanged from the previous version.
         
-        // State Management
         function saveState() { try { localStorage.setItem(LS_KEY, JSON.stringify(currentState)); } catch (e) { console.error("Could not save state.", e); }}
-        function loadState() { try { const s = localStorage.getItem(LS_KEY); if (s) { const parsed = JSON.parse(s); currentState.connectionId = parsed.connectionId; currentState.localUsername = parsed.localUsername; } } catch (e) { console.error("Could not load state.", e); }}
+        function loadState() { try { const s = localStorage.getItem(LS_KEY); if (s) { const parsed = JSON.parse(s); currentState.connectionId = parsed.connectionId; currentState.localUsername = parsed.localUsername; currentState.peerId = parsed.peerId; } } catch (e) { console.error("Could not load state.", e); }}
         function updateLastActivity() { localStorage.setItem('gipi_last_activity', new Date().toISOString()); }
         function checkInactivity() { const la = localStorage.getItem('gipi_last_activity'); if (la) { const d = new Date(la); const t = new Date(); t.setDate(t.getDate() - 30); if (d < t) { shatterConnection(); } } }
 
-        // Navigation & Cleanup
         function goHome() {
             if (unsubscribeConnection) unsubscribeConnection();
             if (unsubscribeMessages) unsubscribeMessages();
@@ -410,29 +395,26 @@
             
             currentState.connectionId = null;
             currentState.peerUsername = null;
+            currentState.peerId = null;
             
             renderMainScreen('buttons');
             changeScreen('main-screen');
             saveState();
         }
-        window.goHome = goHome; // Make available to onclick
+        window.goHome = goHome;
 
-        // Camera
         let cameraStream = null;
         async function startCamera(videoId) { stopCamera(); try { const c = { video: { facingMode: 'user' } }; cameraStream = await navigator.mediaDevices.getUserMedia(c); document.getElementById(videoId).srcObject = cameraStream; document.getElementById(videoId).classList.remove('hidden'); } catch (err) { alert('Could not access camera.'); goHome(); } }
         function stopCamera() { if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; } }
-        function captureFaceProof() { const v = document.getElementById('face-scan-video'); const c = document.getElementById('face-scan-canvas'); c.width = v.videoWidth; c.height = v.videoHeight; const ctx = c.getContext('2d'); ctx.scale(-1, 1); ctx.drawImage(v, -c.width, 0, c.width, c.height); return c.toDataURL('image/jpeg', 0.8); }
+        function captureFaceProof() { const v = document.getElementById('face-scan-video'); const c = document.getElementById('face-scan-canvas'); c.width = v.videoWidth; c.height = v.videoHeight; const ctx = c.getContext('2d'); ctx.drawImage(v, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', 0.8); }
         
-        // QR Scanner
         let html5QrCode = null;
         function startScanner() { changeScreen('qr-scanner-screen'); html5QrCode = new Html5Qrcode("qr-scanner"); const config = { fps: 10, qrbox: { width: 250, height: 250 } }; html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess).catch(err => { alert("Could not start camera."); goHome(); }); }
         function stopScannerAndGoBack() { if (html5QrCode && html5QrCode.isScanning) { html5QrCode.stop().finally(() => { html5QrCode = null; goHome(); }); } else { goHome(); } }
         
-        // Modals
         function showModal(id) { document.getElementById('modal-container').classList.remove('hidden'); document.getElementById(id).classList.remove('hidden'); }
         function hideModal() { document.getElementById('modal-container').classList.add('hidden'); document.querySelectorAll('#modal-container > div').forEach(m => m.classList.add('hidden')); }
         
-        // Misc UI
         function showAwaitingStatus() { document.getElementById('connection-status').textContent = "Awaiting connection request..."; document.getElementById('connection-status').classList.remove('hidden'); document.getElementById('ping-user-button').disabled = true; document.getElementById('ping-user-button').textContent = "Pending"; }
         function renderMainScreen(view) { const el=document.getElementById('main-screen'); if(view === 'permission'){el.innerHTML = `<div class="animate-fade-in"><h2 class="text-4xl font-bold">Welcome to GIPI.</h2><p class="text-gray-400 mt-4 max-w-md mx-auto">To receive secure pings, we need to send notifications.</p><button onclick="requestNotifications()" class="mt-8 bg-white hover:bg-gray-200 text-black font-bold py-4 px-8 rounded-full">Allow Notifications</button><button onclick="declineNotifications()" class="mt-4 text-gray-500 hover:text-gray-400">Maybe later</button></div>`;}else{el.innerHTML = `<div class="animate-fade-in w-full max-w-sm"><h1 class="text-6xl font-black tracking-tighter mb-12">GIPI</h1><div class="space-y-4"><button onclick="generateQR()" class="w-full bg-white text-black font-bold py-5 px-6 rounded-full text-lg">Show Ping QR</button><button onclick="startScanner()" class="w-full bg-gray-800 hover:bg-gray-700 text-white font-bold py-5 px-6 rounded-full text-lg">Scan and Connect</button></div></div>`;}}
         function requestNotifications(){ renderMainScreen('buttons'); }
@@ -440,7 +422,6 @@
         function generateRandomUsername() { const a = ["Aqua", "Cosmic", "Dark", "Echo", "Future", "Ghost"]; const n = ["Agent", "Bot", "Cortex", "Droid", "Entity", "Fox"]; return `${a[Math.floor(Math.random()*a.length)]}${n[Math.floor(Math.random()*n.length)]}${Math.floor(100+Math.random()*900)}`; }
         async function initiatePing() { await startCamera('face-scan-video'); changeScreen('face-scan-screen'); }
 
-        // Expose functions to global scope for onclick attributes
         Object.assign(window, {
             requestNotifications, declineNotifications, generateQR, startScanner, stopScannerAndGoBack,
             initiatePing, sendFaceScan, shatterConnection, sendMessage, acceptPingRequest, declinePingRequest
@@ -448,5 +429,4 @@
     </script>
 </body>
 </html>
-
 
