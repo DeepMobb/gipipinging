@@ -181,6 +181,14 @@
             const connectionId = 'gipi-' + auth.currentUser.uid + '-' + Date.now();
             currentState.connectionId = connectionId;
 
+            const docRef = doc(db, "artifacts", currentState.appId, "public/data/pings", connectionId);
+            await setDoc(docRef, {
+                status: 'waiting',
+                receiverId: auth.currentUser.uid,
+                receiverUsername: currentState.localUsername,
+                createdAt: serverTimestamp()
+            });
+
             const qrElement = document.getElementById('qrcode');
             qrElement.innerHTML = ''; 
             const qrData = JSON.stringify({ connectionId, username: currentState.localUsername, userId: auth.currentUser.uid });
@@ -205,9 +213,6 @@
                     currentState.localUsername = currentState.localUsername || generateRandomUsername();
                     
                     listenToConnection(data.connectionId);
-                    
-                    changeScreen('connected-screen');
-                    setupConnectedScreenDOM();
                     initiatePing();
                 }
             } catch (e) { /* ignore */ }
@@ -283,24 +288,26 @@
             const docRef = doc(db, "artifacts", currentState.appId, "public/data/pings", currentState.connectionId);
             const docSnap = await getDoc(docRef);
 
-            if (!docSnap.exists()) {
-                await setDoc(docRef, {
-                    initiatorId: auth.currentUser.uid,
-                    initiatorUsername: currentState.localUsername,
-                    initiatorFaceProof: faceProofUrl,
-                    receiverId: currentState.peerId,
-                    receiverUsername: currentState.peerUsername,
-                    status: 'awaiting-reply',
-                    createdAt: serverTimestamp()
-                });
-                changeScreen('connected-screen');
-                setupConnectedScreenDOM();
-                showAwaitingStatus();
-            } else {
-                await updateDoc(docRef, {
-                    receiverFaceProof: faceProofUrl,
-                    status: 'connected'
-                });
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.status === 'waiting' && data.receiverId === currentState.peerId) {
+                    // This is the scanner (initiator) responding to the placeholder
+                    await updateDoc(docRef, {
+                        initiatorId: auth.currentUser.uid,
+                        initiatorUsername: currentState.localUsername,
+                        initiatorFaceProof: faceProofUrl,
+                        status: 'awaiting-reply'
+                    });
+                    changeScreen('connected-screen');
+                    setupConnectedScreenDOM();
+                    showAwaitingStatus();
+                } else if (data.status === 'awaiting-reply') {
+                    // This is the receiver replying to the initiator's ping
+                    await updateDoc(docRef, {
+                        receiverFaceProof: faceProofUrl,
+                        status: 'connected'
+                    });
+                }
             }
             faceScanButton.disabled = false;
             faceScanButton.textContent = "Scan Face & Send";
@@ -308,13 +315,12 @@
 
         async function acceptPingRequest() {
             hideModal();
+            currentState.localUsername = currentState.localUsername || generateRandomUsername();
             const docRef = doc(db, "artifacts", currentState.appId, "public/data/pings", currentState.connectionId);
             await updateDoc(docRef, {
-                receiverId: auth.currentUser.uid,
                 receiverUsername: currentState.localUsername,
             });
-            await startCamera('face-scan-video');
-            changeScreen('face-scan-screen');
+            initiatePing();
         }
 
         async function declinePingRequest() {
@@ -420,7 +426,13 @@
         function requestNotifications(){ renderMainScreen('buttons'); }
         function declineNotifications(){ changeScreen('goodbye-screen'); }
         function generateRandomUsername() { const a = ["Aqua", "Cosmic", "Dark", "Echo", "Future", "Ghost"]; const n = ["Agent", "Bot", "Cortex", "Droid", "Entity", "Fox"]; return `${a[Math.floor(Math.random()*a.length)]}${n[Math.floor(Math.random()*n.length)]}${Math.floor(100+Math.random()*900)}`; }
-        async function initiatePing() { await startCamera('face-scan-video'); changeScreen('face-scan-screen'); }
+        
+        async function initiatePing() { 
+            changeScreen('face-scan-screen');
+            setTimeout(() => {
+                startCamera('face-scan-video');
+            }, 100);
+        }
 
         Object.assign(window, {
             requestNotifications, declineNotifications, generateQR, startScanner, stopScannerAndGoBack,
