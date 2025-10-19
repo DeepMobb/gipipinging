@@ -79,16 +79,29 @@
 
         // --- INITIALIZATION ---
         window.onload = function() {
-            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-            
-            // Fallback for local testing if config is not injected
-            if (!Object.keys(firebaseConfig).length) {
-                console.warn("Firebase config not found. App will not connect to backend.");
+            // ACTION REQUIRED: Paste your Firebase configuration object here.
+            // You can get this from your Firebase project settings.
+            // Go to Project Settings > General > Your apps > Web app > Firebase SDK snippet > Config
+            const firebaseConfig = {
+                apiKey: "AIzaSyDS6IGHzcctU7ilJs4n0T2CLGy4_zGn0Go",
+                authDomain: "gipi-71915.firebaseapp.com",
+                projectId: "gipi-71915",
+                storageBucket: "gipi-71915.appspot.com",
+                messagingSenderId: "674633621539",
+                appId: "1:674633621539:web:cc6453a2e219ce6a359196"
+            };
+
+            const finalConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig;
+
+            // Check if the placeholder config is still being used when running locally.
+            if (finalConfig.apiKey.startsWith("PASTE_YOUR")) {
+                console.error("Firebase configuration is missing or incomplete.");
+                alert("ACTION REQUIRED: You need to paste your Firebase project configuration into the index.html file to connect the app. Please see the comments in the <script> tag.");
                 changeScreen('goodbye-screen');
                 return;
             }
 
-            const app = initializeApp(firebaseConfig);
+            const app = initializeApp(finalConfig);
             db = getFirestore(app);
             auth = getAuth(app);
 
@@ -435,4 +448,5 @@
     </script>
 </body>
 </html>
+
 
