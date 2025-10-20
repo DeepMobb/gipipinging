@@ -80,6 +80,9 @@
 
         // --- INITIALIZATION ---
         window.onload = function() {
+            // Clear any potentially incompatible state from previous versions to prevent conflicts.
+            localStorage.removeItem(LS_KEY);
+
             const firebaseConfig = {
                 apiKey: "AIzaSyDS6IGHzcctU7ilJs4n0T2CLGy4_zGn0Go",
                 authDomain: "gipi-71915.firebaseapp.com",
@@ -458,5 +461,6 @@
     </script>
 </body>
 </html>
+
 
 
